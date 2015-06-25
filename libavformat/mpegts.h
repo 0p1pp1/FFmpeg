@@ -114,6 +114,7 @@
 #define DIT_TID         0x7E /* Discontinuity Information section */
 #define SIT_TID         0x7F /* Selection Information section */
 /* TID from 0x80 to 0xFE are user defined */
+#define ECM_TID         0x82 /* ECM for ISDB */
 /* TID 0xFF is reserved */
 
 #define STREAM_TYPE_VIDEO_MPEG1     0x01
