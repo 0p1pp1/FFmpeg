@@ -223,6 +223,7 @@ External library support:
   --enable-libcdio         enable audio CD grabbing with libcdio [no]
   --enable-libdc1394       enable IIDC-1394 grabbing using libdc1394
                            and libraw1394 [no]
+  --enable-libdemulti2     enable MULTI2 descrambling via libdemulti2 [no]
   --enable-libfdk-aac      enable AAC de/encoding via libfdk-aac [no]
   --enable-libflite        enable flite (voice synthesis) support via libflite [no]
   --enable-libfontconfig   enable libfontconfig, useful for drawtext filter [no]
@@ -1510,6 +1511,7 @@ EXTERNAL_LIBRARY_GPL_LIST="
     libx265
     libxavs
     libxvid
+    libdemulti2
 "
 
 EXTERNAL_LIBRARY_NONFREE_LIST="
@@ -2843,6 +2845,7 @@ pcm_mulaw_at_encoder_select="audio_frame_queue"
 chromaprint_muxer_deps="chromaprint"
 h264_videotoolbox_encoder_deps="videotoolbox_encoder pthreads"
 libcelt_decoder_deps="libcelt"
+libdemulti2_demuxer_deps="libdemulti2 dlopen"
 libfdk_aac_decoder_deps="libfdk_aac"
 libfdk_aac_encoder_deps="libfdk_aac"
 libfdk_aac_encoder_select="audio_frame_queue"
@@ -5509,6 +5512,7 @@ decklink_outdev_extralibs="$decklink_outdev_extralibs $ldl"
 decklink_indev_extralibs="$decklink_indev_extralibs $ldl"
 frei0r_filter_extralibs='$ldl'
 frei0r_src_filter_extralibs='$ldl'
+libdemulti2_demuxer_extralibs='$ldl'
 ladspa_filter_extralibs='$ldl'
 nvenc_extralibs='$ldl'
 coreimage_filter_extralibs="-framework QuartzCore -framework AppKit -framework OpenGL"
@@ -5778,6 +5782,7 @@ enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&
                              { check_lib celt/celt.h celt_decoder_create_custom -lcelt0 ||
                                die "ERROR: libcelt must be installed and version must be >= 0.11.0."; }
 enabled libcaca           && require_pkg_config caca caca.h caca_create_canvas
+enabled libdemulti2       && require libdemulti2 demulti2.h demulti2_open -ldemulti2
 enabled libfdk_aac        && { use_pkg_config fdk-aac "fdk-aac/aacenc_lib.h" aacEncOpen ||
                                { require libfdk_aac fdk-aac/aacenc_lib.h aacEncOpen -lfdk-aac &&
                                  warn "using libfdk without pkg-config"; } }

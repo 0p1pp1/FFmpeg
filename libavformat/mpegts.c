@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
 #include "libavutil/buffer.h"
 #include "libavutil/crc.h"
 #include "libavutil/internal.h"
@@ -38,6 +39,10 @@
 #include "mpeg.h"
 #include "isom.h"
 
+#if CONFIG_LIBDEMULTI2
+#include <demulti2.h>
+#endif
+
 /* maximum size in which we look for synchronization if
  * synchronization is lost */
 #define MAX_RESYNC_SIZE 65536
@@ -45,6 +50,8 @@
 #define MAX_PES_PAYLOAD 200 * 1024
 
 #define MAX_MP4_DESCR_COUNT 16
+
+#define SEC_VER_INVALID 0x20
 
 #define MOD_UNLIKELY(modulus, dividend, divisor, prev_dividend)                \
     do {                                                                       \
@@ -57,6 +64,7 @@ enum MpegTSFilterType {
     MPEGTS_PES,
     MPEGTS_SECTION,
     MPEGTS_PCR,
+    MPEGTS_PRIV,
 };
 
 typedef struct MpegTSFilter MpegTSFilter;
@@ -82,6 +90,7 @@ typedef struct MpegTSSectionFilter {
     uint8_t *section_buf;
     unsigned int check_crc : 1;
     unsigned int end_of_section_reached : 1;
+    unsigned int version : 6;
     SectionCallback *section_cb;
     void *opaque;
 } MpegTSSectionFilter;
@@ -159,6 +168,11 @@ struct MpegTSContext {
     /** filters for various streams specified by PMT + for the PAT and PMT */
     MpegTSFilter *pids[NB_PID_MAX];
     int current_pid;
+
+#if CONFIG_LIBDEMULTI2
+    /** handle for libdemulti2 (used in desrambling) */
+    Demulti2Handle dm2_handle;
+#endif
 };
 
 #define MPEGTS_OPTIONS \
@@ -220,9 +234,12 @@ enum MpegTSState {
 #define PES_HEADER_SIZE 9
 #define MAX_PES_HEADER_SIZE (9 + 255)
 
+#define ECM_PID_NONE 0x1fff
+
 typedef struct PESContext {
     int pid;
     int pcr_pid; /**< if -1 then all packets containing PCR are considered */
+    int ecm_pid;
     int stream_type;
     MpegTSContext *ts;
     AVFormatContext *stream;
@@ -478,9 +495,10 @@ static MpegTSFilter *mpegts_open_section_filter(MpegTSContext *ts,
     sec = &filter->u.section_filter;
     sec->section_cb  = section_cb;
     sec->opaque      = opaque;
-    sec->section_buf = av_malloc(MAX_SECTION_SIZE);
+    sec->section_buf = av_mallocz(MAX_SECTION_SIZE);
     sec->check_crc   = check_crc;
     sec->last_ver    = -1;
+    sec->version = SEC_VER_INVALID;
 
     if (!sec->section_buf) {
         av_free(filter);
@@ -587,6 +605,7 @@ typedef struct SectionHeader {
     uint8_t tid;
     uint16_t id;
     uint8_t version;
+    uint8_t cur_nxt;
     uint8_t sec_num;
     uint8_t last_sec_num;
 } SectionHeader;
@@ -670,6 +689,7 @@ static int parse_section_header(SectionHeader *h,
     if (val < 0)
         return val;
     h->version = (val >> 1) & 0x1f;
+    h->cur_nxt = val & 0x01;
     val = get8(pp, p_end);
     if (val < 0)
         return val;
@@ -1286,6 +1306,7 @@ static PESContext *add_pes_stream(MpegTSContext *ts, int pid, int pcr_pid)
     pes->stream  = ts->stream;
     pes->pid     = pid;
     pes->pcr_pid = pcr_pid;
+    pes->ecm_pid = ECM_PID_NONE;
     pes->state   = MPEGTS_SKIP;
     pes->pts     = AV_NOPTS_VALUE;
     pes->dts     = AV_NOPTS_VALUE;
@@ -1625,6 +1646,69 @@ static void scte_data_cb(MpegTSFilter *filter, const uint8_t *section,
 
 }
 
+#if CONFIG_LIBDEMULTI2
+static void ecm_cb(MpegTSFilter *filter, const uint8_t *section,int section_len)
+{
+    MpegTSContext *ts = filter->u.section_filter.opaque;
+    SectionHeader h1, *h = &h1;
+    const uint8_t *p, *p_end;
+    int ret;
+
+    av_dlog(ts->stream, "ECM: len %i\n", section_len);
+    hex_dump_debug(ts->stream, section, section_len);
+
+    p_end = section + section_len - 4;
+    p = section;
+    if (parse_section_header(h, &p, p_end) < 0)
+        return;
+
+    if (h->tid != ECM_TID)
+        return;
+    if (h->version == filter->u.section_filter.version)
+        return;
+    filter->u.section_filter.version = h->version;
+
+    ret = demulti2_feed_ecm(ts->dm2_handle, p, p_end - p, filter->pid);
+    if (ret)
+        av_log(ts->stream, AV_LOG_ERROR, "ecm_cb failed. ret:%d\n", ret);
+}
+
+static void add_ecm(MpegTSContext *ts, int pid, int cas)
+{
+    MpegTSFilter *fil = ts->pids[pid];
+
+    if (!ts->dm2_handle || pid >= ECM_PID_NONE)
+        return;
+
+    if (cas != 0x0005 && cas != 0x000a) {
+        av_log(ts->stream, AV_LOG_INFO, "Not supported CAS-id:%d\n", cas);
+        if (fil)
+            mpegts_close_filter(ts, fil);
+        return;
+    }
+
+    if (fil && (fil->type != MPEGTS_SECTION
+                || fil->u.section_filter.section_cb != ecm_cb)) {
+        av_dlog(ts->stream, "Re-purposing the filter[0x%04x] for ECM\n", pid);
+        mpegts_close_filter(ts, fil);
+    }
+
+    if (ts->pids[pid])
+        return;
+
+    fil = mpegts_open_section_filter(ts, pid, ecm_cb, ts, 1);
+    if (!fil) {
+        av_log(ts->stream, AV_LOG_WARNING,
+               "Failed to create ECM filter[0x%04x]\n", pid);
+        return;
+    }
+
+    av_dlog(ts->stream, "Added ECM pid[0x%04x] cas_id:0x%04x\n", pid, cas);
+}
+#else
+static void add_ecm(MpegTSContext *ts, int pid, int cas) {return;}
+#endif  /* CONFIG_LIBDEMULTI2 */
+
 static const uint8_t opus_coupled_stream_cnt[9] = {
     1, 0, 1, 1, 2, 2, 2, 3, 3
 };
@@ -1653,6 +1737,8 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
     int desc_len, desc_tag, desc_es_id, ext_desc_tag, channels, channel_config_code;
     char language[252];
     int i;
+    PESContext *ctx;
+    int ecm_pid, ecm_cas;
 
     desc_tag = get8(pp, desc_list_end);
     if (desc_tag < 0)
@@ -1896,6 +1982,20 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
             }
         }
         break;
+    case 0x09: /* CA descriptor */
+        ecm_cas = get16(pp, desc_end);
+        if (ecm_cas < 0)
+            break;
+        ecm_pid = get16(pp, desc_end);
+        if (ecm_pid < 0)
+            break;
+        ecm_pid &= 0x1fff;
+        if (!ts->pids[pid])
+            break;
+        ctx = ts->pids[pid]->u.pes_filter.opaque;
+        ctx->ecm_pid = ecm_pid;
+        add_ecm(ts, ecm_pid, ecm_cas);
+        break;
     default:
         break;
     }
@@ -1920,6 +2020,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     int program_info_length, pcr_pid, pid, stream_type;
     int desc_list_len;
     uint32_t prog_reg_desc = 0; /* registration descriptor */
+    int prog_ecm_pid, prog_ecm_cas;
 
     int mp4_descr_count = 0;
     Mp4Descr mp4_descr[MAX_MP4_DESCR_COUNT] = { { 0 } };
@@ -1940,6 +2041,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
     if (h->tid != PMT_TID)
         return;
+    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
+        return;
+    filter->u.section_filter.version = h->version;
     if (!ts->scan_all_pmts && ts->skip_changes)
         return;
 
@@ -1954,6 +2058,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     set_pcr_pid(ts->stream, h->id, pcr_pid);
 
     av_log(ts->stream, AV_LOG_TRACE, "pcr_pid=0x%x\n", pcr_pid);
+
+    prog_ecm_pid = ECM_PID_NONE;
+    prog_ecm_cas = 0;
 
     program_info_length = get16(&p, p_end);
     if (program_info_length < 0)
@@ -1979,6 +2086,11 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         } else if (tag == 0x05 && len >= 4) { // registration descriptor
             prog_reg_desc = bytestream_get_le32(&p);
             len -= 4;
+        } else if (tag == 0x09 && len >= 4) { // CA descriptor
+            prog_ecm_cas = get16(&p, p_end);
+            prog_ecm_pid = get16(&p, p_end) & 0x1fff;
+            len -= 4;
+            add_ecm(ts, prog_ecm_pid, prog_ecm_cas);
         }
         p += len;
     }
@@ -2025,6 +2137,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 if (!st)
                     goto out;
                 st->id = pes->pid;
+                /* packets of private data PES may not start with 00 00 01 */
+                if (stream_type == 0x06)
+                    ts->pids[pid]->type = MPEGTS_PRIV;
             }
         } else {
             int idx = ff_find_stream_index(ts->stream, pid);
@@ -2045,6 +2160,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         if (!st)
             goto out;
+
+        if (pes)
+            pes->ecm_pid = prog_ecm_pid;
 
         if (pes && !pes->stream_type)
             mpegts_set_stream_info(st, pes, stream_type, prog_reg_desc);
@@ -2102,6 +2220,9 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != PAT_TID)
         return;
+    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
+        return;
+    filter->u.section_filter.version = h->version;
     if (ts->skip_changes)
         return;
 
@@ -2177,6 +2298,9 @@ static void sdt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != SDT_TID)
         return;
+    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
+        return;
+    filter->u.section_filter.version = h->version;
     if (ts->skip_changes)
         return;
     if (skip_identical(h, tssf))
@@ -2255,6 +2379,8 @@ static int handle_packet(MpegTSContext *ts, const uint8_t *packet)
     const uint8_t *p, *p_end;
     int64_t pos;
 
+    if (packet[1] & 0x80)  /* TSEI */
+        return 0;
     pid = AV_RB16(packet + 1) & 0x1fff;
     if (pid && discard_pid(ts, pid))
         return 0;
@@ -2364,10 +2490,19 @@ static int handle_packet(MpegTSContext *ts, const uint8_t *packet)
             }
         }
 
+    } else if (tss->type != MPEGTS_PES) {
+        return 0;
     } else {
         int ret;
         // Note: The position here points actually behind the current packet.
         if (tss->type == MPEGTS_PES) {
+#if CONFIG_LIBDEMULTI2
+            PESContext *cxt = tss->u.pes_filter.opaque;
+
+            if ((packet[3] & 0x80) && ts->dm2_handle)
+                demulti2_descramble(ts->dm2_handle, p, p_end - p, packet[3],
+                                    cxt->ecm_pid, NULL);
+#endif
             if ((ret = tss->u.pes_filter.pes_cb(tss, p, p_end - p, is_start,
                                                 pos - ts->raw_packet_size)) < 0)
                 return ret;
@@ -2616,6 +2751,12 @@ static int mpegts_read_header(AVFormatContext *s)
     int len;
     int64_t pos, probesize = s->probesize;
 
+#if CONFIG_LIBDEMULTI2
+    ts->dm2_handle = demulti2_open();
+    if (!ts->dm2_handle)
+        av_log(ts->stream, AV_LOG_WARNING, "Failed to setup libdemulti2.\n");
+#endif
+
     if (ffio_ensure_seekback(pb, probesize) < 0)
         av_log(s, AV_LOG_WARNING, "Failed to allocate buffers for seekback\n");
 
@@ -2796,6 +2937,10 @@ static int mpegts_read_packet(AVFormatContext *s, AVPacket *pkt)
 static void mpegts_free(MpegTSContext *ts)
 {
     int i;
+
+#if CONFIG_LIBDEMULTI2
+    demulti2_close(ts->dm2_handle);
+#endif
 
     clear_programs(ts);
 
