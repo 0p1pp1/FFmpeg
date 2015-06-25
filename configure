@@ -228,6 +228,7 @@ External library support:
   --enable-libcodec2       enable codec2 en/decoding using libcodec2 [no]
   --enable-libdc1394       enable IIDC-1394 grabbing using libdc1394
                            and libraw1394 [no]
+  --enable-libdemulti2     enable MULTI2 descrambling via libdemulti2 [no]
   --enable-libfdk-aac      enable AAC de/encoding via libfdk-aac [no]
   --enable-libflite        enable flite (voice synthesis) support via libflite [no]
   --enable-libfontconfig   enable libfontconfig, useful for drawtext filter [no]
@@ -1638,6 +1639,7 @@ EXTERNAL_LIBRARY_GPL_LIST="
     libx265
     libxavs
     libxvid
+    libdemulti2
 "
 
 EXTERNAL_LIBRARY_NONFREE_LIST="
@@ -3034,6 +3036,7 @@ libaom_av1_encoder_deps="libaom"
 libcelt_decoder_deps="libcelt"
 libcodec2_decoder_deps="libcodec2"
 libcodec2_encoder_deps="libcodec2"
+libdemulti2_deps="libdl"
 libfdk_aac_decoder_deps="libfdk_aac"
 libfdk_aac_encoder_deps="libfdk_aac"
 libfdk_aac_encoder_select="audio_frame_queue"
@@ -3135,6 +3138,7 @@ mp3_demuxer_select="mpegaudio_parser"
 mp3_muxer_select="mpegaudioheader"
 mp4_muxer_select="mov_muxer"
 mpegts_demuxer_select="iso_media"
+mpegts_demuxer_suggest="libdemulti2"
 mpegts_muxer_select="adts_muxer latm_muxer"
 mpegtsraw_demuxer_select="mpegts_demuxer"
 mxf_d10_muxer_select="mxf_muxer"
@@ -5974,6 +5978,7 @@ enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&
 enabled libcaca           && require_pkg_config libcaca caca caca.h caca_create_canvas
 enabled libcodec2         && require libcodec2 codec2/codec2.h codec2_create -lcodec2
 enabled libdc1394         && require_pkg_config libdc1394 libdc1394-2 dc1394/dc1394.h dc1394_new
+enabled libdemulti2       && require libdemulti2 demulti2.h demulti2_open -ldemulti2
 enabled libdrm            && require_pkg_config libdrm libdrm xf86drm.h drmGetVersion
 enabled libfdk_aac        && { check_pkg_config libfdk_aac fdk-aac "fdk-aac/aacenc_lib.h" aacEncOpen ||
                                { require libfdk_aac fdk-aac/aacenc_lib.h aacEncOpen -lfdk-aac &&

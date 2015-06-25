@@ -41,6 +41,7 @@
 #define PMT_TID   0x02
 #define M4OD_TID  0x05
 #define SDT_TID   0x42
+#define ECM_TID   0x82
 
 #define STREAM_TYPE_VIDEO_MPEG1     0x01
 #define STREAM_TYPE_VIDEO_MPEG2     0x02
