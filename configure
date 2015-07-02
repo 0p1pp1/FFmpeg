@@ -3415,6 +3415,7 @@ xv_outdev_deps="xlib"
 # protocols
 async_protocol_deps="threads"
 bluray_protocol_deps="libbluray"
+dvb_protocol_deps="linux_dvb_frontend_h linux_dvb_dmx_h poll_h unistd_h"
 ffrtmpcrypt_protocol_conflict="librtmp_protocol"
 ffrtmpcrypt_protocol_deps_any="gcrypt gmp openssl mbedtls"
 ffrtmpcrypt_protocol_select="tcp_protocol"
@@ -6112,6 +6113,8 @@ check_headers dxgidebug.h
 check_headers dxva.h
 check_headers dxva2api.h -D_WIN32_WINNT=0x0600
 check_headers io.h
+check_headers linux/dvb/dmx.h
+check_headers linux/dvb/frontend.h
 check_headers linux/perf_event.h
 check_headers libcrystalhd/libcrystalhd_if.h
 check_headers malloc.h

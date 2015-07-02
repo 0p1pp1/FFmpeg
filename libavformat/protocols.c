@@ -29,6 +29,7 @@ extern const URLProtocol ff_cache_protocol;
 extern const URLProtocol ff_concat_protocol;
 extern const URLProtocol ff_crypto_protocol;
 extern const URLProtocol ff_data_protocol;
+extern const URLProtocol ff_dvb_protocol;
 extern const URLProtocol ff_ffrtmpcrypt_protocol;
 extern const URLProtocol ff_ffrtmphttp_protocol;
 extern const URLProtocol ff_file_protocol;
