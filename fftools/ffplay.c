@@ -2732,6 +2732,7 @@ static int is_realtime(AVFormatContext *s)
 
     if(s->pb && (   !strncmp(s->url, "rtp:", 4)
                  || !strncmp(s->url, "udp:", 4)
+                 || !strncmp(s->url, "dvb:", 4)
                 )
     )
         return 1;
