@@ -3036,6 +3036,7 @@ xv_outdev_extralibs="-lXv -lX11 -lXext"
 # protocols
 async_protocol_deps="threads"
 bluray_protocol_deps="libbluray"
+dvb_protocol_deps="linux_dvb_frontend_h linux_dvb_dmx_h poll_h unistd_h"
 ffrtmpcrypt_protocol_deps="!librtmp_protocol"
 ffrtmpcrypt_protocol_deps_any="gcrypt gmp openssl"
 ffrtmpcrypt_protocol_select="tcp_protocol"
@@ -5662,6 +5663,8 @@ enabled videotoolbox && check_func_headers CoreVideo/CVImageBuffer.h kCVImageBuf
 check_header windows.h
 check_header X11/extensions/XvMClib.h
 check_header asm/types.h
+check_header linux/dvb/frontend.h
+check_header linux/dvb/dmx.h
 
 # it seems there are versions of clang in some distros that try to use the
 # gcc headers, which explodes for stdatomic
