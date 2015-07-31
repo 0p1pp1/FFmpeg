@@ -156,6 +156,7 @@ struct MpegTSContext {
     int skip_unknown_pmt;
 
     int scan_all_pmts;
+    int progid;
 
     int resync_size;
     int merge_pmt_versions;
@@ -200,6 +201,8 @@ static const AVOption options[] = {
      {.i64 = 0}, 0, 1, 0 },
     {"skip_clear", "skip clearing programs", offsetof(MpegTSContext, skip_clear), AV_OPT_TYPE_BOOL,
      {.i64 = 0}, 0, 1, 0 },
+    {"progid", "Probe/Output just the packets from the specific program", offsetof(MpegTSContext, progid), AV_OPT_TYPE_INT,
+     { .i64 =  -1}, -1, 0xFFFF,  AV_OPT_FLAG_DECODING_PARAM },
     { NULL },
 };
 
@@ -2403,6 +2406,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     av_log(ts->stream, AV_LOG_TRACE, "sid=0x%x sec_num=%d/%d version=%d tid=%d\n",
             h->id, h->sec_num, h->last_sec_num, h->version, h->tid);
 
+    if (ts->progid > 0 && h->id != ts->progid)
+        return;
+
     if (!ts->scan_all_pmts && ts->skip_changes)
         return;
 
@@ -2559,6 +2565,10 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         if (pes && !pes->stream_type)
             mpegts_set_stream_info(st, pes, stream_type, prog_reg_desc);
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_UNKNOWN) {
+            st->codecpar->codec_type = AVMEDIA_TYPE_DATA;
+            st->codecpar->codec_id = AV_CODEC_ID_NONE;
+        }
 
         add_pid_to_pmt(ts, h->id, pid);
 
@@ -3199,6 +3209,13 @@ static int mpegts_read_header(AVFormatContext *s)
 
     if (s->iformat == &ff_mpegts_demuxer) {
         /* normal demux */
+        int64_t progid = -1;
+        if (ts->progid < 0 &&
+            av_opt_get_int(pb, "progid", AV_OPT_SEARCH_CHILDREN, &progid) >= 0
+            && progid > 0 && progid < 0xffff) {
+            ts->progid = progid;
+            av_log(ts->stream, AV_LOG_INFO, "program:%" PRId64 " auto-set\n", progid);
+        }
 
         /* first do a scan to get all the services */
         seek_back(s, pb, pos);
@@ -3210,11 +3227,13 @@ static int mpegts_read_header(AVFormatContext *s)
         handle_packets(ts, probesize / ts->raw_packet_size);
         /* if could not find service, enable auto_guess */
 
-        ts->auto_guess = 1;
+        if (ts->progid <= 0) {
+            ts->auto_guess = 1;
+            s->ctx_flags |= AVFMTCTX_NOHEADER;
+        }
 
         av_log(ts->stream, AV_LOG_TRACE, "tuning done\n");
 
-        s->ctx_flags |= AVFMTCTX_NOHEADER;
     } else {
         AVStream *st;
         int pcr_pid, pid, nb_packets, nb_pcrs, ret, pcr_l;
