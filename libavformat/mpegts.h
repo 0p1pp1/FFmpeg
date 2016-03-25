@@ -35,6 +35,7 @@
 /* pids */
 #define PAT_PID                 0x0000
 #define SDT_PID                 0x0011
+#define EIT_PID                 0x0012
 
 /* table ids */
 #define PAT_TID   0x00
@@ -42,6 +43,7 @@
 #define M4OD_TID  0x05
 #define SDT_TID   0x42
 #define ECM_TID   0x82
+#define EIT_TID   0x4e
 
 #define STREAM_TYPE_VIDEO_MPEG1     0x01
 #define STREAM_TYPE_VIDEO_MPEG2     0x02

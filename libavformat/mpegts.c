@@ -2377,6 +2377,104 @@ static void sdt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     }
 }
 
+static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len)
+{
+    MpegTSContext *ts = filter->u.section_filter.opaque;
+    AVFormatContext *ac = ts->stream;
+    SectionHeader h1, *h = &h1;
+    const uint8_t *p, *p_end;
+    AVProgram *program;
+    int i, dlen;
+
+    p_end = section + section_len - 4;
+    p     = section;
+    if (parse_section_header(h, &p, p_end) < 0)
+        return;
+    if (h->tid != EIT_TID || h->sec_num != 0)
+        return;
+    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
+        return;
+    if (ts->skip_changes && h->version != SEC_VER_INVALID)
+        return;
+
+    program = NULL;
+    for (i = 0; i < ac->nb_programs; i++)
+        if (ac->programs[i]->id == h->id)
+            program = ac->programs[i];
+    if (!program || program->nb_stream_indexes <= 0)
+        return;
+
+    filter->u.section_filter.version = h->version;
+    av_dlog(ts->stream, "EIT:\n");
+    hex_dump_debug(ts->stream, section, section_len);
+
+    if (p + 6 + 12 > p_end)
+        return;
+    p += 6 + 10;
+    dlen = get16(&p, p_end) & 0x0fff;
+    if (p + dlen > p_end)
+        return;
+    p_end = p + dlen;
+    for (;;) {
+        int desc_tag, desc_len;
+
+        desc_tag = get8(&p, p_end);
+        if (desc_tag < 0)
+            break;
+        desc_len = get8(&p, p_end);
+        if (desc_len < 0 || p + desc_len > p_end)
+            break;
+
+        av_dlog(ts->stream, "tag: 0x%02x len=%d\n", desc_tag, desc_len);
+        switch (desc_tag) {
+        case 0xc4:  /* audio component descriptor */
+            {
+                int comp_tag;
+                AVStream *stream;
+                int is_dmono, is_multi;
+                char lang[4];
+
+                comp_tag = p[2];
+
+                for (i = 0; i < program->nb_stream_indexes; i++) {
+                    int idx = program->stream_index[i];
+
+                    if (idx < 0 || idx > ac->nb_streams)
+                        continue;
+
+                    stream = ac->streams[idx];
+                    if (stream && stream->stream_identifier == comp_tag + 1)
+                        break;
+                }
+                if (i == program->nb_stream_indexes)
+                    break;
+
+                is_dmono = (p[1] == 0x02);
+                is_multi = !!(p[5] & 0x80);
+                memcpy(lang, p + 6, 3);
+                lang[3] = '\0';
+                av_dict_set(&stream->metadata, "language", lang, 0);
+                av_dict_set_int(&stream->metadata, "isdmono", is_dmono, 0);
+
+                av_log(ts->stream, AV_LOG_VERBOSE,
+                       "prog:%d audio[pid: 0x%04x tag: 0x%02x](%s) dmono:%d\n",
+                       program->id, stream->id, comp_tag, lang, is_dmono);
+
+                if (is_multi) {
+                    memcpy(lang, p + 9, 3);
+                    lang[3] = '\0';
+                } else
+                    lang[0] = '\0';
+                av_dict_set(&stream->metadata, "language2", lang, 0);
+            }
+            break;
+        default:
+            break;
+        }
+        p += desc_len;
+    }
+}
+
 static int parse_pcr(int64_t *ppcr_high, int *ppcr_low,
                      const uint8_t *packet);
 
@@ -2797,6 +2895,7 @@ static int mpegts_read_header(AVFormatContext *s)
         mpegts_open_section_filter(ts, SDT_PID, sdt_cb, ts, 1);
 
         mpegts_open_section_filter(ts, PAT_PID, pat_cb, ts, 1);
+        mpegts_open_section_filter(ts, EIT_PID, eit_cb, ts, 1);
 
         handle_packets(ts, probesize / ts->raw_packet_size);
         /* if could not find service, enable auto_guess */
@@ -3059,6 +3158,7 @@ MpegTSContext *avpriv_mpegts_parse_open(AVFormatContext *s)
     ts->auto_guess = 1;
     mpegts_open_section_filter(ts, SDT_PID, sdt_cb, ts, 1);
     mpegts_open_section_filter(ts, PAT_PID, pat_cb, ts, 1);
+    mpegts_open_section_filter(ts, EIT_PID, eit_cb, ts, 1);
 
     return ts;
 }
