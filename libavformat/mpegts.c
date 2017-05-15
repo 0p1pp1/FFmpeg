@@ -2470,6 +2470,30 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         av_dlog(ts->stream, "tag: 0x%02x len=%d\n", desc_tag, desc_len);
         switch (desc_tag) {
+        case 0x4d:  /* short event descriptor */
+            {
+                int tlen;
+                char *title;
+
+                if (dlen < 5)
+                    break;
+                tlen = *(p + 3);
+                if (tlen + 4 > dlen)
+                    break;
+
+                title = av_strndup(p + 4, tlen);
+                if (!av_strncasecmp(p, "jpn", 3)) {
+                    char *txt = aribb24_to_utf8(ts->iconv_cd, title, tlen);
+
+                    if (txt) {
+                        av_free(title);
+                        title = txt;
+                    }
+                }
+                av_dict_set(&program->metadata,
+                            "title", title, AV_DICT_DONT_STRDUP_VAL);
+            }
+            break;
         case 0xc4:  /* audio component descriptor */
             {
                 int comp_tag;
