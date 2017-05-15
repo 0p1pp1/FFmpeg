@@ -2530,9 +2530,8 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 if (is_multi) {
                     memcpy(lang, p + 9, 3);
                     lang[3] = '\0';
-                } else
-                    lang[0] = '\0';
-                av_dict_set(&stream->metadata, "language2", lang, 0);
+                    av_dict_set(&stream->metadata, "language2", lang, 0);
+                }
             }
             break;
         default:
