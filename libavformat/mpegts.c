@@ -176,6 +176,9 @@ struct MpegTSContext {
     AVStream *epg_stream;
     AVBufferPool* pools[32];
 
+#if CONFIG_ICONV
+    iconv_t iconv_cd;
+#endif
 #if CONFIG_LIBDEMULTI2
     /** handle for libdemulti2 (used in desrambling) */
     Demulti2Handle dm2_handle;
@@ -711,6 +714,7 @@ static char *getstr8(const uint8_t **pp, const uint8_t *p_end)
     if (len > p_end - p)
         return NULL;
 #if CONFIG_ICONV
+    goto no_iconv; /* ISDB has its own conversion func */
     if (len) {
         const char *encodings[] = {
             "ISO6937", "ISO-8859-5", "ISO-8859-6", "ISO-8859-7",
@@ -2685,6 +2689,31 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     }
 }
 
+#if CONFIG_ICONV
+static char *aribb24_to_utf8(iconv_t cd, char *txt, size_t len)
+{
+    char *ret, *outbuf;
+    size_t out_left;
+
+    if (cd == (iconv_t) -1)
+        return NULL;
+
+    out_left = len * 4;
+    ret = outbuf = av_malloc(out_left);
+    if (!outbuf)
+        return NULL;
+
+    iconv(cd, NULL, NULL, NULL, NULL);
+    iconv(cd, &txt, &len, &outbuf, &out_left);
+
+    if (out_left == 0)
+        outbuf--;
+    *outbuf = '\0';
+
+    return ret;
+}
+#endif
+
 static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len)
 {
     MpegTSContext *ts = filter->u.section_filter.opaque;
@@ -2895,6 +2924,22 @@ static void sdt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 if (name) {
                     AVProgram *program = av_new_program(ts->stream, sid);
                     if (program) {
+#if CONFIG_ICONV
+                        char *txt;
+
+                        txt = aribb24_to_utf8(ts->iconv_cd, name, strlen(name));
+                        if (txt) {
+                            av_free(name);
+                            name = txt;
+                        }
+
+                        txt = aribb24_to_utf8(ts->iconv_cd, provider_name,
+                                              strlen(provider_name));
+                        if (txt) {
+                            av_free(provider_name);
+                            provider_name = txt;
+                        }
+#endif
                         av_dict_set(&program->metadata, "service_name", name, 0);
                         av_dict_set(&program->metadata, "service_provider",
                                     provider_name, 0);
@@ -3284,6 +3329,10 @@ static int mpegts_read_header(AVFormatContext *s)
     if (!ts->dm2_handle)
         av_log(ts->stream, AV_LOG_WARNING, "Failed to setup libdemulti2.\n");
 #endif
+#if CONFIG_ICONV
+    ts->iconv_cd = (iconv_t)-1;
+    ts->iconv_cd = iconv_open("UTF-8", "ARIB-STD-B24");
+#endif
 
     if (ffio_ensure_seekback(pb, probesize) < 0)
         av_log(s, AV_LOG_WARNING, "Failed to allocate buffers for seekback\n");
@@ -3489,6 +3538,10 @@ static void mpegts_free(MpegTSContext *ts)
 static int mpegts_read_close(AVFormatContext *s)
 {
     MpegTSContext *ts = s->priv_data;
+#if CONFIG_ICONV
+    if (ts->iconv_cd != (iconv_t)-1)
+        iconv_close(ts->iconv_cd);
+#endif
     mpegts_free(ts);
     return 0;
 }
