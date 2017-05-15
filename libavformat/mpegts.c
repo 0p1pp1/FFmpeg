@@ -2532,6 +2532,8 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                     lang[3] = '\0';
                     av_dict_set(&stream->metadata, "language2", lang, 0);
                 }
+
+                stream->event_flags |= AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
             }
             break;
         default:
