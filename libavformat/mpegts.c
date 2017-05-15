@@ -2175,9 +2175,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         if (pes && !pes->stream_type)
             mpegts_set_stream_info(st, pes, stream_type, prog_reg_desc);
-        if (st->codec->codec_type == AVMEDIA_TYPE_UNKNOWN) {
-            st->codec->codec_type = AVMEDIA_TYPE_DATA;
-            st->codec->codec_id = AV_CODEC_ID_NONE;
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_UNKNOWN) {
+            st->codecpar->codec_type = AVMEDIA_TYPE_DATA;
+            st->codecpar->codec_id = AV_CODEC_ID_NONE;
         }
 
         add_pid_to_pmt(ts, h->id, pid);
