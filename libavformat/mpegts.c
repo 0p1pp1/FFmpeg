@@ -2013,7 +2013,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
 
 static int is_pes_stream(int stream_type, uint32_t prog_reg_desc)
 {
-    return !(stream_type == 0x13 ||
+    return !(stream_type == 0x13 || stream_type == 0x06 ||
              (stream_type == 0x86 && prog_reg_desc == AV_RL32("CUEI")) );
 }
 
