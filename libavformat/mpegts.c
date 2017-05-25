@@ -1945,8 +1945,8 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
         break;
     case 0x52: /* stream identifier descriptor */
         st->stream_identifier = 1 + get8(pp, desc_end);
-        if (st->stream_identifier == 1 || st->stream_identifier == 11
-            || st->stream_identifier == 31)
+        if (st->stream_identifier == 1 || st->stream_identifier == 17
+            || st->stream_identifier == 49)
             st->disposition |= AV_DISPOSITION_DEFAULT;
         break;
     case 0x26: /* metadata descriptor */
