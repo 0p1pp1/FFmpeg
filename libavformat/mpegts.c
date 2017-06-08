@@ -2013,7 +2013,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
 
 static int is_pes_stream(int stream_type, uint32_t prog_reg_desc)
 {
-    return !(stream_type == 0x13 || stream_type == 0x06 ||
+    return !(stream_type == 0x13 ||
              (stream_type == 0x86 && prog_reg_desc == AV_RL32("CUEI")) );
 }
 
@@ -2130,10 +2130,17 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             goto out;
 
         /* now create stream */
-        if (ts->pids[pid] && ts->pids[pid]->type == MPEGTS_PES) {
+        if (ts->pids[pid] &&
+            (ts->pids[pid]->type == MPEGTS_PES ||
+             ts->pids[pid]->type == MPEGTS_PRIV)) {
             pes = ts->pids[pid]->u.pes_filter.opaque;
             if (!pes->st) {
-                pes->st     = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    pes->st = ts->stream->streams[idx];
+                else
+                    pes->st     = avformat_new_stream(pes->stream, NULL);
                 if (!pes->st)
                     goto out;
                 pes->st->id = pes->pid;
@@ -2144,7 +2151,12 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 mpegts_close_filter(ts, ts->pids[pid]); // wrongly added sdt filter probably
             pes = add_pes_stream(ts, pid, pcr_pid);
             if (pes) {
-                st = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    st = ts->stream->streams[idx];
+                else
+                    st = avformat_new_stream(pes->stream, NULL);
                 if (!st)
                     goto out;
                 st->id = pes->pid;
