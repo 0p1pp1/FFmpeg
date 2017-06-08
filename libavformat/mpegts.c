@@ -2309,7 +2309,7 @@ static int parse_stream_identifier_desc(const uint8_t *p, const uint8_t *p_end)
 
 static int is_pes_stream(int stream_type, uint32_t prog_reg_desc)
 {
-    return !(stream_type == 0x13 || stream_type == 0x06 ||
+    return !(stream_type == 0x13 ||
              (stream_type == 0x86 && prog_reg_desc == AV_RL32("CUEI")) );
 }
 
@@ -2431,7 +2431,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             stream_identifier = parse_stream_identifier_desc(p, p_end);
 
         /* now create stream */
-        if (ts->pids[pid] && ts->pids[pid]->type == MPEGTS_PES) {
+        if (ts->pids[pid] &&
+            (ts->pids[pid]->type == MPEGTS_PES ||
+             ts->pids[pid]->type == MPEGTS_PRIV)) {
             pes = ts->pids[pid]->u.pes_filter.opaque;
             if (ts->merge_pmt_versions && !pes->st) {
                 st = find_matching_stream(ts, pid, h->id, stream_identifier, i);
@@ -2442,7 +2444,12 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 }
             }
             if (!pes->st) {
-                pes->st = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    pes->st = ts->stream->streams[idx];
+                else
+                    pes->st     = avformat_new_stream(pes->stream, NULL);
                 if (!pes->st)
                     goto out;
                 pes->st->id = pes->pid;
@@ -2464,7 +2471,12 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 }
             }
             if (pes && !pes->st) {
-                st = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    st = ts->stream->streams[idx];
+                else
+                    st = avformat_new_stream(pes->stream, NULL);
                 if (!st)
                     goto out;
                 st->id = pes->pid;
