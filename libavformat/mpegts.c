@@ -2496,7 +2496,9 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             stream_identifier = parse_stream_identifier_desc(p, p_end);
 
         /* now create stream */
-        if (ts->pids[pid] && ts->pids[pid]->type == MPEGTS_PES) {
+        if (ts->pids[pid] &&
+            (ts->pids[pid]->type == MPEGTS_PES ||
+             ts->pids[pid]->type == MPEGTS_PRIV)) {
             pes = ts->pids[pid]->u.pes_filter.opaque;
             if (ts->merge_pmt_versions && !pes->st) {
                 st = find_matching_stream(ts, pid, h->id, stream_identifier, i);
@@ -2507,7 +2509,12 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 }
             }
             if (!pes->st) {
-                pes->st = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    pes->st = ts->stream->streams[idx];
+                else
+                    pes->st     = avformat_new_stream(pes->stream, NULL);
                 if (!pes->st)
                     goto out;
                 pes->st->id = pes->pid;
@@ -2529,7 +2536,12 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 }
             }
             if (pes && !pes->st) {
-                st = avformat_new_stream(pes->stream, NULL);
+                int idx = ff_find_stream_index(ts->stream, pid);
+
+                if (idx >= 0)
+                    st = ts->stream->streams[idx];
+                else
+                    st = avformat_new_stream(pes->stream, NULL);
                 if (!st)
                     goto out;
                 st->id = pes->pid;
