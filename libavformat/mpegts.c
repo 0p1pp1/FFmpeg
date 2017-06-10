@@ -2613,6 +2613,14 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 pes->sub_st->codecpar->codec_tag = st->codecpar->codec_tag;
             }
         }
+        /* super-imposed messages are not supported yet. */
+        if ( st->codecpar->codec_id == AV_CODEC_ID_ISDB_SUBTITLE &&
+             !( (st->stream_identifier >= 0x31 && st->stream_identifier <= 0x38)
+                || st->stream_identifier == 0x88 ) ) {
+            st->codecpar->codec_type = AVMEDIA_TYPE_DATA;
+            st->codecpar->codec_id = AV_CODEC_ID_NONE;
+        }
+
         p = desc_list_end;
     }
 
@@ -2882,6 +2890,51 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                     lang[3] = '\0';
                     av_dict_set(&stream->metadata, "language2", lang, 0);
                 }
+
+                stream->event_flags |= AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
+            }
+            break;
+        case 0xC7:    /* data component descriptor */
+            if (desc_len < 9)
+                break;
+            if ( !(p[0] == 0 && p[1] == 0x8) ) /* only ISDB SUB */
+                break;
+            /* check SUB PES language(s) */
+            if (p[3] < 5 || desc_len < 4 + p[3] + 5)
+                break;
+
+            {
+                int i, num_lang;
+                AVStream *stream;
+                char lang[4];
+
+                for (i = 0; i < program->nb_stream_indexes; i++) {
+                    int idx = program->stream_index[i];
+
+                    if (idx < 0 || idx > ac->nb_streams)
+                        continue;
+
+                    stream = ac->streams[idx];
+                    /* there should be only one subtitle (tag:p[2]) PES*/
+                    if (stream && stream->stream_identifier == p[2] + 1)
+                        break;
+                }
+                if (i == program->nb_stream_indexes)
+                    break;
+
+                num_lang = p[4];
+                if (num_lang < 1 || p[3] < num_lang * 4 + 1)
+                    break;
+                for (i = 0; i < num_lang; i++)
+                    if ( (p[5 + i * 4] & 0xE0) == 0 ) {
+                        memcpy(lang, p + 5 + i * 4 + 1, 3);
+                        lang[3] = '\0';
+                        av_dict_set(&stream->metadata, "language", lang, 0);
+                    } else if ( (p[5 + i * 4] & 0xE0) == 0x20 ) {
+                        memcpy(lang, p + 5 + i * 4 + 1, 3);
+                        lang[3] = '\0';
+                        av_dict_set(&stream->metadata, "language2", lang, 0);
+                    }
 
                 stream->event_flags |= AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
             }
