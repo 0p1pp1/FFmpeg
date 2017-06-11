@@ -652,6 +652,7 @@ extern AVCodec ff_dvbsub_encoder;
 extern AVCodec ff_dvbsub_decoder;
 extern AVCodec ff_dvdsub_encoder;
 extern AVCodec ff_dvdsub_decoder;
+extern AVCodec ff_isdbsub_decoder;
 extern AVCodec ff_jacosub_decoder;
 extern AVCodec ff_microdvd_decoder;
 extern AVCodec ff_movtext_encoder;

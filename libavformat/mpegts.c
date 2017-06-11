@@ -2227,10 +2227,19 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
                 break;
 
             st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
+#if 0 /* Use internal ISDB-sub decoder  instead of libaribb24 */
             st->codecpar->codec_id   = AV_CODEC_ID_ARIB_CAPTION;
             st->codecpar->profile    = picked_profile;
+#else
+            st->codecpar->codec_id = AV_CODEC_ID_ISDB_SUBTITLE;
+            st->need_parsing = 0;
+            st->internal->need_context_update = 1;
+            if (ts && ts->pids[pid])
+                ts->pids[pid]->type = MPEGTS_PES;
+#endif
             st->request_probe        = 0;
         }
+        break;
     case 0x09: /* CA descriptor */
         {
             PESContext *ctx;
