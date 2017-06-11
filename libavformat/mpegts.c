@@ -2052,7 +2052,26 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
         ctx->ecm_pid = ecm_pid;
         add_ecm(ts, ecm_pid, ecm_cas);
         break;
-    default:
+    case 0xFD: /* (ISDB-S/T) Data Coding Method Descriptor */
+        {
+            int code;
+
+            if (stream_type != STREAM_TYPE_PRIVATE_DATA)
+                break;
+            code = get16(pp, desc_end);
+            if (code < 0)
+                break;
+            if (!(code == 0x08 || code == 0x12))
+                break;
+            st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
+            st->codecpar->codec_id = AV_CODEC_ID_ISDB_SUBTITLE;
+            st->request_probe = st->need_parsing = 0;
+            st->internal->need_context_update = 1;
+            if (ts && ts->pids[pid])
+                ts->pids[pid]->type = MPEGTS_PES;
+        }
+        break;
+   default:
         break;
     }
     *pp = desc_end;
