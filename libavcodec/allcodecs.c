@@ -586,6 +586,7 @@ static void register_all(void)
     REGISTER_DECODER(VPLAYER,           vplayer);
     REGISTER_ENCDEC (WEBVTT,            webvtt);
     REGISTER_ENCDEC (XSUB,              xsub);
+    REGISTER_DECODER(ISDBSUB,           isdbsub);
 
     /* external libraries */
     REGISTER_ENCDEC (AAC_AT,            aac_at);

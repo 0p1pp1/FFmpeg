@@ -2988,6 +2988,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("HDMV Text subtitle"),
         .props     = AV_CODEC_PROP_TEXT_SUB,
     },
+    {
+        .id        = AV_CODEC_ID_ISDB_SUBTITLE,
+        .type      = AVMEDIA_TYPE_SUBTITLE,
+        .name      = "isdbsub",
+        .long_name = NULL_IF_CONFIG_SMALL("ISDB-S/T Text subtitle"),
+        .props     = AV_CODEC_PROP_TEXT_SUB,
+    },
 
     /* other kind of codecs and pseudo-codecs */
     {
