@@ -52,8 +52,6 @@
 
 #define MAX_MP4_DESCR_COUNT 16
 
-#define SEC_VER_INVALID 0x20
-
 #define MOD_UNLIKELY(modulus, dividend, divisor, prev_dividend)                \
     do {                                                                       \
         if ((prev_dividend) == 0 || (dividend) - (prev_dividend) != (divisor)) \
@@ -91,7 +89,6 @@ typedef struct MpegTSSectionFilter {
     uint8_t *section_buf;
     unsigned int check_crc : 1;
     unsigned int end_of_section_reached : 1;
-    unsigned int version : 6;
     SectionCallback *section_cb;
     void *opaque;
 } MpegTSSectionFilter;
@@ -503,7 +500,6 @@ static MpegTSFilter *mpegts_open_section_filter(MpegTSContext *ts,
     sec->section_buf = av_mallocz(MAX_SECTION_SIZE);
     sec->check_crc   = check_crc;
     sec->last_ver    = -1;
-    sec->version = SEC_VER_INVALID;
 
     if (!sec->section_buf) {
         av_free(filter);
@@ -618,6 +614,9 @@ typedef struct SectionHeader {
 static int skip_identical(const SectionHeader *h, MpegTSSectionFilter *tssf)
 {
     if (h->version == tssf->last_ver && tssf->last_crc == tssf->crc)
+        return 1;
+
+    if (!h->cur_nxt)
         return 1;
 
     tssf->last_ver = h->version;
@@ -1669,9 +1668,8 @@ static void ecm_cb(MpegTSFilter *filter, const uint8_t *section,int section_len)
 
     if (h->tid != ECM_TID)
         return;
-    if (h->version == filter->u.section_filter.version)
+    if (skip_identical(h, &filter->u.section_filter))
         return;
-    filter->u.section_filter.version = h->version;
 
     ret = demulti2_feed_ecm(ts->dm2_handle, p, p_end - p, filter->pid);
     if (ret)
@@ -2069,9 +2067,6 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
     if (h->tid != PMT_TID)
         return;
-    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
-        return;
-    filter->u.section_filter.version = h->version;
     if (!ts->scan_all_pmts && ts->skip_changes)
         return;
 
@@ -2272,9 +2267,6 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != PAT_TID)
         return;
-    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
-        return;
-    filter->u.section_filter.version = h->version;
     if (ts->skip_changes)
         return;
 
@@ -2373,9 +2365,6 @@ static void sdt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != SDT_TID)
         return;
-    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
-        return;
-    filter->u.section_filter.version = h->version;
     if (ts->skip_changes)
         return;
     if (skip_identical(h, tssf))
@@ -2472,9 +2461,9 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != EIT_TID || h->sec_num != 0)
         return;
-    if (!h->cur_nxt || h->version == filter->u.section_filter.version)
+    if (skip_identical(h, &filter->u.section_filter))
         return;
-    if (ts->skip_changes && h->version != SEC_VER_INVALID)
+    if (ts->skip_changes)
         return;
 
     program = NULL;
@@ -2484,7 +2473,6 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     if (!program || program->nb_stream_indexes <= 0)
         return;
 
-    filter->u.section_filter.version = h->version;
     av_dlog(ts->stream, "EIT:\n");
     hex_dump_debug(ts->stream, section, section_len);
 
