@@ -160,6 +160,8 @@ struct MpegTSContext {
 
     int resync_size;
     int merge_pmt_versions;
+    /* whether to discard scrambled packets or not */
+    int drop_scrambled;
 
     /******************************************/
     /* private mpegts data */
@@ -206,6 +208,8 @@ static const AVOption options[] = {
      {.i64 = 0}, 0, 1, 0 },
     {"progid", "Probe/Output just the packets from the specific program", offsetof(MpegTSContext, progid), AV_OPT_TYPE_INT,
      { .i64 =  -1}, -1, 0xFFFF,  AV_OPT_FLAG_DECODING_PARAM },
+    {"drop_scrambled", "discard scrambled/not-yet-descrambled packets", offsetof(MpegTSContext, drop_scrambled), AV_OPT_TYPE_BOOL,
+     { .i64 = 1}, 0, 1, 0 },
     { NULL },
 };
 
@@ -3195,10 +3199,17 @@ static int handle_packet(MpegTSContext *ts, const uint8_t *packet, int64_t pos)
         if (tss->type == MPEGTS_PES) {
 #if CONFIG_LIBDEMULTI2
             PESContext *cxt = tss->u.pes_filter.opaque;
+            MpegTSFilter *tsf = ts->pids[cxt->ecm_pid];
 
-            if ((packet[3] & 0x80) && ts->dm2_handle)
-                demulti2_descramble(ts->dm2_handle, p, p_end - p, packet[3],
-                                    cxt->ecm_pid, NULL);
+            ret = 1;
+            if ((packet[3] & 0x80) && ts->dm2_handle
+                && cxt->ecm_pid != NULL_PID
+                && tsf && tsf->u.section_filter.last_ver != -1)
+                ret = demulti2_descramble(ts->dm2_handle, p, p_end - p,
+                                          packet[3], cxt->ecm_pid, NULL);
+
+            if (ret && (packet[3] & 0x80) && ts->drop_scrambled)
+                return 0;
 #endif
             if ((ret = tss->u.pes_filter.pes_cb(tss, p, p_end - p, is_start,
                                                 pos - ts->raw_packet_size)) < 0)
