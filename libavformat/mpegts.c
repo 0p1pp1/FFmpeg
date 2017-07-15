@@ -2019,6 +2019,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
                 break;
             st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
             st->codecpar->codec_id = AV_CODEC_ID_ISDB_SUBTITLE;
+            st->request_probe = st->need_parsing = 0;
             if (ts && ts->pids[pid])
                 ts->pids[pid]->type = MPEGTS_PES;
         }
