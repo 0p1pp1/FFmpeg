@@ -119,6 +119,8 @@ struct Program {
 
     /** have we found pmt for this program */
     int pmt_found;
+
+    int cur_eit_ver;
 };
 
 struct MpegTSContext {
@@ -318,6 +320,7 @@ static void clear_program(MpegTSContext *ts, unsigned int programid)
         if (ts->prg[i].id == programid) {
             ts->prg[i].nb_pids = 0;
             ts->prg[i].pmt_found = 0;
+            ts->prg[i].cur_eit_ver = -1;
         }
 }
 
@@ -338,6 +341,7 @@ static void add_pat_entry(MpegTSContext *ts, unsigned int programid)
     p->id = programid;
     p->nb_pids = 0;
     p->pmt_found = 0;
+    p->cur_eit_ver = -1;
     ts->nb_prg++;
 }
 
@@ -2799,11 +2803,7 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         return;
     if (h->tid != EIT_TID || h->sec_num != 0)
         return;
-    if (!h->cur_nxt)
-        return;
     if (ts->skip_changes)
-        return;
-    if (skip_identical(h, &filter->u.section_filter))
         return;
 
     program = NULL;
@@ -2813,7 +2813,14 @@ static void eit_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     if (!program || program->nb_stream_indexes <= 0)
         return;
 
-    filter->u.section_filter.version = h->version;
+    {
+        struct Program *p = get_program(ts, h->id);
+
+        if (!p || p->cur_eit_ver == h->version)
+            return;
+        p->cur_eit_ver = h->version;
+    }
+
     av_log(ts->stream, AV_LOG_DEBUG, "EIT:\n");
     hex_dump_debug(ts->stream, section, section_len);
 
