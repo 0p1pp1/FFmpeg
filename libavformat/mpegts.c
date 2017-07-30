@@ -406,6 +406,10 @@ static int discard_pid(MpegTSContext *ts, unsigned int pid)
     int used = 0, discarded = 0;
     struct Program *p;
 
+    int idx = ff_find_stream_index(ts->stream, pid);
+    if (idx >= 0 && ts->stream->streams[idx]->discard == AVDISCARD_ALL)
+        return 1;
+
     /* If none of the programs have .discard=AVDISCARD_ALL then there's
      * no way we have to discard this packet */
     for (k = 0; k < ts->stream->nb_programs; k++)
