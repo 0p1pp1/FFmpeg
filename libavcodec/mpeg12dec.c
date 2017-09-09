@@ -1325,6 +1325,8 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
 
         avctx->pix_fmt = mpeg_get_pixelformat(avctx);
         setup_hwaccel_for_pixfmt(avctx);
+        if (avctx->hwaccel)
+            avctx->slice_flags |= SLICE_FLAG_CODED_ORDER | SLICE_FLAG_ALLOW_FIELD;
 
         /* Quantization matrices may need reordering
          * if DCT permutation is changed. */
