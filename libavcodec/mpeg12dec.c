@@ -2679,7 +2679,7 @@ static int decode_chunks(AVCodecContext *avctx, AVFrame *picture,
                     return AVERROR_INVALIDDATA;
                 }
 
-                if (!s2->last_picture_ptr) {
+                if (!s2->next_picture_ptr) {
                     /* Skip B-frames if we do not have reference frames and
                      * GOP is not closed. */
                     if (s2->pict_type == AV_PICTURE_TYPE_B) {
@@ -2693,7 +2693,7 @@ static int decode_chunks(AVCodecContext *avctx, AVFrame *picture,
                 }
                 if (s2->pict_type == AV_PICTURE_TYPE_I || (s2->avctx->flags2 & AV_CODEC_FLAG2_SHOW_ALL))
                     s->sync = 1;
-                if (!s2->next_picture_ptr) {
+                if (!s2->last_picture_ptr) {
                     /* Skip P-frames if we do not have a reference frame or
                      * we have an invalid header. */
                     if (s2->pict_type == AV_PICTURE_TYPE_P && !s->sync) {
