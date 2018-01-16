@@ -34,7 +34,7 @@
 #define ISDBSUB_DATA_ID 0x80
 #define ISDBSUB_DU_TYPE_TXT 0x20
 #define ISDBSUB_UNIT_SEP 0x1F
-#define ISDBSUB_MGMNT_TIMEOUT (180 * 1000)
+#define ISDBSUB_MGMNT_TIMEOUT 180
 #define ISDBSUB_NO_DGID -1
 #define ISDBSUB_MAX_LANG 2 /* ARIB TR-B14/B15 */
 
@@ -44,8 +44,6 @@
     (((format) == ISDBSUB_FMT_960H || (format) == ISDBSUB_FMT_960V) ? 960 : 720)
 #define LAYOUT_GET_HEIGHT(format) \
     (((format) == ISDBSUB_FMT_960H || (format) == ISDBSUB_FMT_960V) ? 540 : 480)
-
-#define MPEGTS_MAX_PTS (((2LL<<33) + 45)/90)
 
 /* FIXME: should be RGBA, not ABGR ? */
 #define RGBA(r,g,b,a) (((unsigned)(255 - (a)) << 24) | ((b) << 16) | ((g) << 8) | (r))
@@ -213,6 +211,7 @@ typedef struct ISDBSubContext {
     int64_t last_mngmnt_pts; // time when the last mgmnt data was received
     int64_t pts;
     int64_t duration;
+    AVRational time_base;
 
     enum {
         ISDBSUB_TMD_FREE,
@@ -258,8 +257,12 @@ static void memdump(ISDBSubContext *ctx, const char *buf, int buf_size)
         av_log(ctx, AV_LOG_DEBUG, "\n");
 }
 
+static inline int64_t q_to_pts(ISDBSubContext *ctx, int64_t num, int den)
+{
+    return num * ctx->time_base.den / (den * ctx->time_base.num);
+}
 
-static char *pts_to_str(int64_t t, char buf[16])
+static char *pts_to_str(ISDBSubContext *ctx, int64_t t, char buf[16])
 {
     int ms10, sec, min, hour;
 
@@ -268,8 +271,10 @@ static char *pts_to_str(int64_t t, char buf[16])
         return buf;
     }
 
-    ms10 = (t % 1000) / 10;
-    t /= 1000;
+    // firstly convert to 1/100 timebase
+    t = av_rescale_q(t, ctx->time_base, av_make_q(1, 100));
+    ms10 = t % 100;
+    t /= 100;
     sec = t % 60;
     t /= 60;
     min = t % 60;
@@ -1211,7 +1216,7 @@ static const uint8_t *proc_ctl(ISDBSubContext *ctx,
             if (buf[0] == 0x20 || buf[0] == 0x28) {
                 if (buf[0] == 0x20) {
                     // wait. copy & split out as another event
-                    ctx->duration = (buf[1] - 0x40) * 100;
+                    ctx->duration = q_to_pts(ctx, buf[1] - 0x40, 10);
                     append_event(ctx);
                 }
                 buf += 2;
@@ -1965,11 +1970,11 @@ static void append_event(ISDBSubContext *ctx)
 
     av_log(ctx, AV_LOG_DEBUG, "append_event: %lu\n", ctx->text.used);
 
-    if (ctx->duration >= 0 && ctx->duration < 100)
-        ctx->duration = 100;
+    if (ctx->duration >= 0 && ctx->duration < q_to_pts(ctx, 1, 10))
+        ctx->duration = q_to_pts(ctx, 1, 10);
 
-    pts_to_str(ctx->pts, start);
-    pts_to_str(ctx->pts + ctx->duration, end);
+    pts_to_str(ctx, ctx->pts, start);
+    pts_to_str(ctx, ctx->pts + ctx->duration, end);
 
     effect[0] = '\0';
     get_margins(ctx, &m);
@@ -2008,7 +2013,8 @@ static void append_event(ISDBSubContext *ctx)
     dialog = av_asprintf("Dialogue: %s,%s,%s,%d,%d,%d,%s,%s%s\n",
         l->is_profile_c ? "prof_c" :
             (IS_HORIZONTAL_LAYOUT(l->format) ? "hstyle" : "vstyle"),
-        pts_to_str(ctx->pts, start), pts_to_str(ctx->pts + ctx->duration, end),
+        pts_to_str(ctx, ctx->pts, start),
+        pts_to_str(ctx, ctx->pts + ctx->duration, end),
         m.l, m.r, m.v, effect, clipping, ctx->text.buf);
 
     if (ctx->events) {
@@ -2218,23 +2224,33 @@ static int isdbsub_decode_frame(AVCodecContext *avctx,
     orig_pts = avpkt->pts;
     ctx->pts = orig_pts;
     ctx->duration = INT_MAX; // duration unknown
+    ctx->time_base = avctx->pkt_timebase;
+    if (ctx->time_base.num <= 0 || ctx->time_base.den <= 0) {
+        av_log(ctx, AV_LOG_VERBOSE, "No timebase set. assuming 90kHz.\n");
+        ctx->time_base = av_make_q(1, 90000);
+    }
 
     if (ctx->pts != AV_NOPTS_VALUE && ctx->last_mngmnt_pts != AV_NOPTS_VALUE) {
         int64_t t = orig_pts;
         char t1[16], t2[16];
+        int64_t mpegts_max_pts, timeout;
+
+        mpegts_max_pts = q_to_pts(ctx, 2LL<<33, 90000);
+        timeout = q_to_pts(ctx, ISDBSUB_MGMNT_TIMEOUT, 1);
 
         // check pts timeout, but taking PTS wrap-around into account.
         if (t < ctx->last_mngmnt_pts &&
-            (ctx->last_mngmnt_pts - t) > (MPEGTS_MAX_PTS >> 1)) {
+            (ctx->last_mngmnt_pts - t) > (mpegts_max_pts >> 1)) {
             av_log(ctx, AV_LOG_INFO, "PTS wrap-around %s -> %s\n",
-                pts_to_str(ctx->last_mngmnt_pts, t1), pts_to_str(t, t2));
-            t += MPEGTS_MAX_PTS;
+                pts_to_str(ctx, ctx->last_mngmnt_pts, t1),
+                pts_to_str(ctx, t, t2));
+            t += mpegts_max_pts;
         }
-        if (t < ctx->last_mngmnt_pts ||
-            t - ctx->last_mngmnt_pts > ISDBSUB_MGMNT_TIMEOUT) {
+        if (t < ctx->last_mngmnt_pts || t - ctx->last_mngmnt_pts > timeout) {
             av_log(ctx, AV_LOG_VERBOSE,
                 "Subtitle Management DataGroup time-out. %s -> %s\n",
-                pts_to_str(ctx->last_mngmnt_pts, t1), pts_to_str(t, t2));
+                pts_to_str(ctx, ctx->last_mngmnt_pts, t1),
+                pts_to_str(ctx, t, t2));
             ctx->last_mngmnt_pts = AV_NOPTS_VALUE;
         }
     }
@@ -2268,7 +2284,7 @@ static int isdbsub_decode_frame(AVCodecContext *avctx,
             ctx->last_mngmnt_id = dg_id;
             ctx->last_mngmnt_pts = orig_pts;
             av_log(ctx, AV_LOG_DEBUG,
-                "last_mngmnt_pts set to %s\n", pts_to_str(orig_pts, t1));
+                "last_mngmnt_pts set to %s\n", pts_to_str(ctx, orig_pts, t1));
         } else if ((dg_id & 0x0f) == ctx->lang_tag + 1) { // subtile data group
             if (ctx->last_mngmnt_id == ISDBSUB_NO_DGID)
                 av_log(ctx, AV_LOG_TRACE, "no management data group received yet.\n");
