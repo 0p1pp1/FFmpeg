@@ -950,7 +950,7 @@ static int convert_sub_to_old_ass_form(AVSubtitle *sub, const AVPacket *pkt, AVR
 
         /* rescale timing to ASS time base (ms) */
         ts_start = av_rescale_q(pkt->pts, tb, av_make_q(1, 100));
-        if (pkt->duration != -1)
+        if (pkt->duration > 0)
             ts_duration = av_rescale_q(pkt->duration, tb, av_make_q(1, 100));
         sub->end_display_time = FFMAX(sub->end_display_time, 10 * ts_duration);
 
