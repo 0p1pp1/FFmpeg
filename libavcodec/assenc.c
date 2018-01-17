@@ -26,8 +26,13 @@
 #include "libavutil/avstring.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
+#include "libavutil/opt.h"
 
 typedef struct {
+#if FF_API_ASS_TIMING
+    AVClass *class;
+    int raw_mode; ///< flag on whether to pass through old-style inputs
+#endif
     int id; ///< current event id, ReadOrder field
 } ASSEncodeContext;
 
@@ -61,7 +66,7 @@ static int ass_encode_frame(AVCodecContext *avctx,
         }
 
 #if FF_API_ASS_TIMING
-        if (!strncmp(ass, "Dialogue: ", 10)) {
+        if (!s->raw_mode && !strncmp(ass, "Dialogue: ", 10)) {
             if (i > 0) {
                 av_log(avctx, AV_LOG_ERROR, "ASS encoder supports only one "
                        "ASS rectangle field.\n");
@@ -114,6 +119,23 @@ AVCodec ff_ssa_encoder = {
 };
 #endif
 
+#if FF_API_ASS_TIMING
+static const AVOption options[] = {
+    {"ass_raw_mode", "pass thru old-style ASS input as is, w/o conversion",
+        offsetof(ASSEncodeContext, raw_mode),
+        AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1,
+        AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_SUBTITLE_PARAM},
+    {NULL}
+};
+
+static const AVClass ass_enc_class = {
+    .class_name = "ASS Encoder",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+#endif
+
 #if CONFIG_ASS_ENCODER
 AVCodec ff_ass_encoder = {
     .name         = "ass",
@@ -123,5 +145,8 @@ AVCodec ff_ass_encoder = {
     .init         = ass_encode_init,
     .encode_sub   = ass_encode_frame,
     .priv_data_size = sizeof(ASSEncodeContext),
+#  if FF_API_ASS_TIMING
+    .priv_class   = &ass_enc_class,
+#  endif
 };
 #endif
