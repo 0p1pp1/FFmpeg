@@ -40,12 +40,6 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#ifdef _GNU_SOURCE
-#    define xgetenv(name) secure_getenv((name))
-#else
-#    define xgetenv(name) getenv((name))
-#endif
-
 typedef struct DVBContext {
     const AVClass *class;
     URLContext *hd;
@@ -129,11 +123,11 @@ static FILE *get_conf_file(const char *fname)
     if (!path)
         return NULL;
     path[0] = '\0';
-    env = xgetenv("XDG_DATA_HOME");
+    env = getenv("XDG_DATA_HOME");
     if (env && *env)
         av_strlcpy(path, env, plen);
     else {
-        env = xgetenv("HOME");
+        env = getenv("HOME");
         if (env && *env)
             snprintf(path, plen, "%s/.local/share", env);
     }
@@ -148,7 +142,7 @@ static FILE *get_conf_file(const char *fname)
         }
     }
 
-    env = xgetenv("XDG_DATA_DIRS");
+    env = getenv("XDG_DATA_DIRS");
     if (!env || !*env)
         env = "/usr/local/share:/usr/share";
     fp = NULL;
@@ -459,7 +453,7 @@ static int dvb_open(URLContext *h, const char *uri, int flags)
         s->demux_no = s->fe_no;
 
     if (!chfile || !*chfile)
-        chfile = xgetenv("FFMPEG_DVB_CH_FILE");
+        chfile = getenv("FFMPEG_DVB_CH_FILE");
     if (!chfile || !*chfile)
         chfile = "channels.conf";
     ret = search_channel(s, name, chfile);
