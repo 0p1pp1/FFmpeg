@@ -2437,7 +2437,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
     if (ts->progid > 0 && h->id != ts->progid)
         return;
 
-    if (!ts->scan_all_pmts && ts->skip_changes)
+    if (ts->scan_all_pmts <= 0 && ts->skip_changes)
         return;
 
     if (ts->skip_unknown_pmt && !get_program(ts, h->id))
