@@ -3683,7 +3683,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 } else if (st->need_parsing == AVSTREAM_PARSE_FULL_RAW) {
                     st->parser->flags |= PARSER_FLAG_USE_CODEC_TS;
                 }
-            } else if (st->need_parsing) {
+            } else if (st->need_parsing && st->codecpar->codec_id) {
                 av_log(ic, AV_LOG_VERBOSE, "parser not found for codec "
                        "%s, packets or times may be invalid.\n",
                        avcodec_get_name(st->codecpar->codec_id));
