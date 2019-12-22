@@ -1797,7 +1797,7 @@ static void ecm_cb(MpegTSFilter *filter, const uint8_t *section,int section_len)
     const uint8_t *p, *p_end;
     int ret;
 
-    av_log(ts->stream, AV_LOG_DEBUG, "ECM: len %i\n", section_len);
+    av_log(ts->stream, AV_LOG_TRACE, "ECM: len %i\n", section_len);
     hex_dump_debug(ts->stream, section, section_len);
 
     p_end = section + section_len - 4;
